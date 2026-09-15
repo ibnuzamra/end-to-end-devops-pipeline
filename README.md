@@ -218,10 +218,12 @@ atlantis apply -p prod
 
 ## Author
 
-Ibnu Zamra
 Ibnu Zamratul Iman
 
 DevOps Engineer
 
 GitHub:
 https://github.com/ibnuzamra
+LinkedIn:
+https://linkedin.com/in/ibnuzamra
+
