@@ -76,7 +76,12 @@ end-to-end-devops-pipeline/
 │   ├── atlantis.yaml # Atlantis GitOps policy and multi-project configuration
 │   ├── env/          # Root modules separated by environment (dev, uat, prod)
 │   ├── iam/          # Least-privilege IAM policy documents
-│   └── modules/      # Reusable modules (ec2, eks, iam_ecr_inspector, route53)
+│   └── modules/      # Reusable modules
+│       ├── vpc/      # Multi-AZ VPC, public/private subnets, IGW, & NAT GW
+│       ├── ec2/      # EC2 compute instances & security groups
+│       ├── eks/      # Amazon EKS cluster & managed node groups
+│       ├── iam_ecr_inspector/ # ECR & AWS Inspector IAM policies
+│       └── route53/  # Route53 DNS hosted zones & records
 │
 ├── gitlab-ci/        # 6-stage GitLab CI/CD pipeline & container build
 │   ├── .gitlab-ci.yml# Complete CI/CD configuration
@@ -114,8 +119,10 @@ end-to-end-devops-pipeline/
 
 Terraform and Atlantis provision:
 
-- VPC (Public and Private Subnets)
-- Internet Gateway & Route Tables
+- Modular Multi-AZ VPC (`172.16.72.0/22`) across Availability Zones (`ap-southeast-3a`, `ap-southeast-3b`)
+- Public Subnets (`172.16.72.0/26`, `172.16.72.64/26`) with Internet Gateway (IGW) and ELB tags
+- Private Application Subnets (`172.16.74.0/26`, `172.16.74.64/26`) with dedicated NAT Gateway routing
+- Independent Route Tables, EIPs, and Subnet Associations
 - Amazon EKS Cluster & Managed Node Groups
 - EC2 Instances & Security Groups
 - AWS Route53 DNS Hosted Zones & Records
@@ -190,6 +197,8 @@ atlantis apply -p prod
 ---
 
 ## Results
+
+✅ Modular AWS VPC (`172.16.72.0/22`) provisioned with multi-AZ public/private subnets, IGW, and NAT Gateways
 
 ✅ Modular AWS infrastructure provisioned with Terraform and DynamoDB state locking
 
