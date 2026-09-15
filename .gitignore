@@ -1,0 +1,49 @@
+# Local environment and secret files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Terraform local state and modules
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+backend.hcl
+
+# Atlantis runtime data
+atlantis-data/
+
+# Application and dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# SonarQube cache
+.sonar/
+
+# Security scanner caches
+trivy-cache/
+.trivy/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Allow markdown documentation
+
+# Khusus README.md diperbolehkan push ke git (override global ~/.config/git/ignore)
+!README.md
+!readme.md
+!**/README.md
+!**/readme.md

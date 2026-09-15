@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: project-uat
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/name: project
+    app.kubernetes.io/instance: project-uat
+spec:
+  project: project
+
+  sources:
+    # 1. Base Helm Chart dari internal OCI Registry
+    - repoURL: registry.internal.corp/project
+      chart: project
+      targetRevision: "1.0.1-uat"
+      helm:
+        valueFiles:
+          - $values/gitops/values/uat/values.yaml
+
+    # 2. Desired state values dari Git repository
+    - repoURL: git@gitlab.internal.corp:devops/gitops.git
+      targetRevision: master
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: project-uat
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

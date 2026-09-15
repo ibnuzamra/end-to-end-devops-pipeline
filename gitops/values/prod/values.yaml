@@ -1,0 +1,15 @@
+image:
+  repository: 123456789012.dkr.ecr.ap-southeast-3.amazonaws.com/project-repository/project
+  pullPolicy: Always
+  tag: "prod-2"
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1024Mi
+  limits:
+    cpu: 2000m
+    memory: 2048Mi
+
+podAnnotations:
+  cluster-autoscaler.kubernetes.io/safe-to-evict: "true"

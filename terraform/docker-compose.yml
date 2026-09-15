@@ -1,0 +1,38 @@
+services:
+  atlantis:
+    image: ghcr.io/runatlantis/atlantis:v0.46.0
+    restart: unless-stopped
+    depends_on:
+      atlantis-data-init:
+        condition: service_completed_successfully
+    ports:
+      - "4141:4141"
+    env_file:
+      - ${ATLANTIS_ENV_FILE:-.env}
+    environment:
+      ATLANTIS_PORT: "4141"
+      ATLANTIS_GITLAB_HOSTNAME: ${ATLANTIS_GITLAB_HOSTNAME:-gitlab.com}
+      ATLANTIS_DATA_DIR: /atlantis-data
+    volumes:
+      - atlantis-data:/atlantis-data
+    command: server
+
+  atlantis-data-init:
+    image: alpine:3.20
+    user: "0:0"
+    restart: "no"
+    command: ["sh", "-c", "mkdir -p /atlantis-data/bin && chown -R 100:100 /atlantis-data"]
+    volumes:
+      - atlantis-data:/atlantis-data
+
+  ngrok:
+    image: ngrok/ngrok:3-alpine
+    restart: unless-stopped
+    depends_on:
+      - atlantis
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command: ["http", "--url=https://${NGROK_DOMAIN}", "atlantis:4141"]
+
+volumes:
+  atlantis-data:

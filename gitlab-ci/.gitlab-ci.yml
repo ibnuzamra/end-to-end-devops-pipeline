@@ -1,0 +1,539 @@
+stages:
+  - test
+  - build
+  - scan
+  - publish
+  - gitops
+  - cleanup
+
+variables:
+  APPNAME: "project-backend"
+  REPO: "project"
+  ECR_REGISTRY: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}"
+  HELM_CHART_URL: "oci://registry.internal.corp"
+  HELM_CHART_VERSION: "1.0.1"
+  HELM_CHART_VERSION_PRD: "2.0.1"
+  
+  OCPPROJECT: "project"
+  OCPPROJECT_UAT: "project-uat"
+
+  # Internal mirror pinned to an immutable digest.
+  TRIVY_IMAGE: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/security/trivy:latest"
+
+  SONAR_URL: "http://sonarqube.internal.corp:9000"
+  OPENSHIFT_SERVER: "https://api.ocdev.internal.corp:6443/"
+  OPENSHIFT_SERVER_PRD: "https://api.ocprd.internal.corp:6443/"
+
+# ---------------------------------------------------------------------------
+# Test
+# ---------------------------------------------------------------------------
+sonarqube-check:
+  stage: test
+  tags:
+    - dev
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  before_script:
+    - /opt/sonar-scanner/bin/sonar-scanner --version
+  script:
+    - /opt/sonar-scanner/bin/sonar-scanner
+      -Dsonar.projectKey=${OCPPROJECT}-${APPNAME}
+      -Dsonar.sources=.
+      -Dsonar.host.url=${SONAR_URL}
+      -Dsonar.login=${SONAR_TOKEN}
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_TAG
+
+# Unit Test
+unit-test:
+  stage: test
+  tags:
+    - dev
+  script:
+    - export NVM_DIR="$HOME/.nvm"
+    - source $NVM_DIR/nvm.sh
+    - nvm install 20
+    - nvm use 20
+    - node -v
+    # Enable Corepack and check/install pnpm
+    - corepack enable
+    - corepack prepare pnpm@latest --activate
+    - pnpm -v
+
+    # Install dependencies
+    - pnpm install --frozen-lockfile
+
+    # Run tests
+    - pnpm test
+  allow_failure: false
+  variables:
+    MEILI_HOST: "http://localhost:7700"
+    MEILI_MASTER_KEY: "test-key"
+    MEILI_INDEX: "test-index"
+    NODE_ENV: "test"
+    DB_DATABASE: $DB_DATABASE
+    DB_DIALECT: $DB_DIALECT
+    DB_HOST: $DB_HOST
+    DB_PASSWORD: $DB_PASSWORD
+    DB_PORT: $DB_PORT
+    DB_SCHEMA: $DB_SCHEMA
+    DB_USERNAME: $DB_USERNAME
+    DB_SCHEMA_USER_MANAGEMENT: $DB_SCHEMA_USER_MANAGEMENT
+    DB_SCHEMA_MASTER_DATA: $DB_SCHEMA_MASTER_DATA
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH =~ /^(feat|fix)\//
+    - if: $CI_COMMIT_TAG
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+.build_template: &build_template
+  stage: build
+  before_script:
+    - |
+      set -euo pipefail
+      aws ecr get-login-password --region "${AWS_DEFAULT_REGION}" \
+        | docker login \
+            --username AWS \
+            --password-stdin "${ECR_REGISTRY}"
+  script:
+    - |
+      set -euo pipefail
+      SCAN_TAG="scan-${CI_PIPELINE_ID}-${CI_JOB_ID}"
+      SCAN_IMAGE="${ECR_REGISTRY}/${REPO}/${APPNAME}:${SCAN_TAG}"
+      trap 'docker image rm -f "${SCAN_IMAGE}" 2>/dev/null || true' EXIT
+      echo "Building temporary image: ${SCAN_IMAGE}"
+      docker build --pull --no-cache -t "${SCAN_IMAGE}" .
+      docker push "${SCAN_IMAGE}"
+      echo "SCAN_TAG=${SCAN_TAG}" > build.env
+  artifacts:
+    when: always
+    reports:
+      dotenv: build.env
+
+build-dev:
+  <<: *build_template
+  tags:
+    - dev
+  variables:
+    IMAGE_PREFIX: dev
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH =~ /^(feat|fix)\//
+
+build-uat:
+  <<: *build_template
+  tags:
+    - dev
+  variables:
+    IMAGE_PREFIX: uat
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+  when: manual
+
+build-prod:
+  <<: *build_template
+  tags:
+    - prod
+  variables:
+    IMAGE_PREFIX: prod
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+  when: manual
+
+# ---------------------------------------------------------------------------
+# AWS Inspector
+# ---------------------------------------------------------------------------
+.inspector_template: &inspector_template
+  stage: scan
+  allow_failure: true
+  script:
+    - |
+      set -euo pipefail
+      : "${SCAN_TAG:?SCAN_TAG was not provided by the build job}"
+      IMAGE_DIGEST=$(aws ecr describe-images --repository-name "${REPO}/${APPNAME}" --image-ids imageTag="${SCAN_TAG}" --query 'imageDetails[0].imageDigest' --output text)
+      INSPECTOR_FINDINGS='{"findings":[]}'
+      for attempt in {1..60}; do
+        INSPECTOR_FINDINGS=$(aws inspector2 list-findings --filter-criteria "{\"ecrImageHash\":[{\"comparison\":\"EQUALS\",\"value\":\"${IMAGE_DIGEST}\"}]}" --output json)
+        FINDING_COUNT=$(printf '%s' "${INSPECTOR_FINDINGS}" | jq '.findings | length')
+        echo "Inspector findings (${attempt}/60): ${FINDING_COUNT}"
+        if (( FINDING_COUNT > 0 )); then break; fi
+        sleep 10
+      done
+      CRITICAL_COUNT=$(printf '%s' "${INSPECTOR_FINDINGS}" | jq '[.findings[]? | select((.severity // .findingSeverity // "") | ascii_upcase == "CRITICAL")] | length')
+      HIGH_COUNT=$(printf '%s' "${INSPECTOR_FINDINGS}" | jq '[.findings[]? | select((.severity // .findingSeverity // "") | ascii_upcase == "HIGH")] | length')
+      echo "AWS Inspector: ${CRITICAL_COUNT} critical, ${HIGH_COUNT} high"
+      print_findings() {
+        local severity="$1"
+        echo ""
+        echo "| Name | Vulnerable package | Severity | Status | Installed Version | Fixed in | Description |"
+        echo "|---|---|---|---|---|---|---|"
+        printf '%s' "${INSPECTOR_FINDINGS}" | jq -r --arg severity "${severity}" '
+          .findings[]?
+          | select(((.severity // .findingSeverity // "") | ascii_upcase) == $severity)
+          | [
+              (.name // .findingName // .title // .packageVulnerabilityDetails.vulnerabilityId // "unknown"),
+              ((.packageVulnerabilityDetails.vulnerablePackages // []) | map(.name // "unknown") | join(", ")),
+              (.findingSeverity // .severity // "unknown"),
+              (.status // .findingStatus // "Not available"),
+              ((.packageVulnerabilityDetails.vulnerablePackages // []) | map(.version // "Not available") | join(", ")),
+              ((.packageVulnerabilityDetails.vulnerablePackages // []) | map(.fixedInVersion // "Not available") | join(", ")),
+              (.description // .title // "Not available")
+            ]
+          | map(tostring | gsub("[\\r\\n]+"; " ") | gsub("\\|"; "\\\\|"))
+          | @tsv' | while IFS=$'\t' read -r name package severity_value status installed_version fixed_in description; do
+            printf '%s\n' "| ${name} | ${package} | ${severity_value} | ${status} | ${installed_version} | ${fixed_in} | ${description} |"
+          done
+      }
+      if (( CRITICAL_COUNT > 0 )); then print_findings "CRITICAL"; fi
+      if (( HIGH_COUNT > 0 )); then print_findings "HIGH"; fi
+      if (( CRITICAL_COUNT > 0 || HIGH_COUNT > 0 )); then exit 1; fi
+
+inspector-dev:
+  <<: *inspector_template
+  tags: [dev]
+  needs: [{ job: build-dev, artifacts: true }]
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH =~ /^(feat|fix)\//
+
+inspector-uat:
+  <<: *inspector_template
+  tags: [dev]
+  needs: [{ job: build-uat, artifacts: true }]
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+
+inspector-prod:
+  <<: *inspector_template
+  tags: [prod]
+  needs: [{ job: build-prod, artifacts: true }]
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+# ---------------------------------------------------------------------------
+# Trivy
+# ---------------------------------------------------------------------------
+.trivy_template: &trivy_template
+  stage: scan
+  allow_failure: true
+  before_script:
+    - |
+      set -euo pipefail
+      : "${SCAN_TAG:?SCAN_TAG was not provided by the build job}"
+      export SCAN_IMAGE="${ECR_REGISTRY}/${REPO}/${APPNAME}:${SCAN_TAG}"
+      export TRIVY_PASSWORD="$(aws ecr get-login-password --region "${AWS_DEFAULT_REGION}")"
+      echo "${TRIVY_PASSWORD}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+  script:
+    - |
+      docker run --rm -e TRIVY_USERNAME=AWS -e TRIVY_PASSWORD \
+        -v trivy-cache:/root/.cache/ "${TRIVY_IMAGE}" image \
+        --scanners vuln,secret \
+        --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --no-progress "${SCAN_IMAGE}"
+
+trivy-dev:
+  <<: *trivy_template
+  tags: [dev]
+  needs:
+    - job: build-dev
+      artifacts: true
+    - job: inspector-dev
+      artifacts: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH =~ /^(feat|fix)\//
+
+trivy-uat:
+  <<: *trivy_template
+  tags: [dev]
+  needs:
+    - job: build-uat
+      artifacts: true
+    - job: inspector-uat
+      artifacts: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+
+trivy-prod:
+  <<: *trivy_template
+  tags: [prod]
+  needs:
+    - job: build-prod
+      artifacts: true
+    - job: inspector-prod
+      artifacts: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+# ---------------------------------------------------------------------------
+# Manual image publish after Inspector and Trivy review
+# ---------------------------------------------------------------------------
+.publish_template: &publish_template
+  stage: publish
+  before_script:
+    - |
+      set -euo pipefail
+      aws ecr get-login-password --region "${AWS_DEFAULT_REGION}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+  script:
+    - |
+      set -euo pipefail
+      : "${SCAN_TAG:?SCAN_TAG was not provided by the build job}"
+      LAST_BUILD=0
+      TAGS=$(aws ecr describe-images --repository-name "${REPO}/${APPNAME}" --query 'imageDetails[].imageTags[]' --output text 2>/dev/null || true)
+      if [[ -n "$TAGS" && "$TAGS" != "None" ]]; then
+        for tag in $TAGS; do
+          if [[ "$tag" =~ ^${IMAGE_PREFIX}-([0-9]+)$ ]] && (( BASH_REMATCH[1] > LAST_BUILD )); then LAST_BUILD=${BASH_REMATCH[1]}; fi
+        done
+      fi
+      GENERATED_IMAGE_TAG="${IMAGE_PREFIX}-$((LAST_BUILD + 1))"
+
+      IMAGE="${ECR_REGISTRY}/${REPO}/${APPNAME}:${GENERATED_IMAGE_TAG}"
+      SCAN_IMAGE="${ECR_REGISTRY}/${REPO}/${APPNAME}:${SCAN_TAG}"
+      LATEST_IMAGE="${ECR_REGISTRY}/${REPO}/${APPNAME}:latest"
+
+      echo "Manually approved image publish: ${IMAGE}"
+      docker pull "${SCAN_IMAGE}"
+      docker tag "${SCAN_IMAGE}" "${IMAGE}"
+      docker push "${IMAGE}"
+
+      if [[ "${IMAGE_PREFIX}" == "prod" ]]; then
+        docker tag "${IMAGE}" "${LATEST_IMAGE}"
+        docker push "${LATEST_IMAGE}"
+      fi
+
+      aws ecr batch-delete-image \
+        --repository-name "${REPO}/${APPNAME}" \
+        --image-ids imageTag="${SCAN_TAG}" >/dev/null
+      echo "GENERATED_IMAGE_TAG=${GENERATED_IMAGE_TAG}" > publish.env
+
+  artifacts:
+    reports:
+      dotenv: publish.env
+    when: always
+
+publish-dev:
+  <<: *publish_template
+  tags: [dev]
+  variables:
+    IMAGE_PREFIX: dev
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      when: manual
+    - if: '$CI_COMMIT_BRANCH =~ /^(feat|fix)\//'
+      when: manual
+  needs:
+    - job: build-dev
+      artifacts: true
+    - job: trivy-dev
+      artifacts: false
+
+publish-uat:
+  <<: *publish_template
+  tags: [dev]
+  variables:
+    IMAGE_PREFIX: uat
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      when: manual
+  needs:
+    - job: build-uat
+      artifacts: true
+    - job: trivy-uat
+      artifacts: false
+
+publish-prod:
+  <<: *publish_template
+  tags:
+    - prod
+  variables:
+    IMAGE_PREFIX: prod
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      when: manual
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - if: '$CI_COMMIT_TAG'
+      when: manual
+  needs:
+    - job: build-prod
+      artifacts: true
+    - job: trivy-prod
+      artifacts: false
+
+# ---------------------------------------------------------------------------
+# GitOps
+# ---------------------------------------------------------------------------
+.gitops_template: &gitops_template
+  stage: gitops
+  before_script:
+    - git config --global user.email "devops@internal.corp"
+    - git config --global user.name "Ibnu Z.I."
+  script:
+    - |
+      set -euo pipefail
+
+      : "${GENERATED_IMAGE_TAG:?GENERATED_IMAGE_TAG was not provided by the publish job}"
+      : > kargo-promotion.env
+
+      rm -rf gitops
+      clone_retry=5
+
+      for clone_attempt in $(seq 1 "${clone_retry}"); do
+        if git clone "${GITOPS_REPO}" gitops; then
+          break
+        fi
+
+        rm -rf gitops
+        if (( clone_attempt == clone_retry )); then
+          exit 1
+        fi
+
+        sleep $((clone_attempt * 5))
+      done
+
+      poll_interval="${KARGO_POLL_INTERVAL_SECONDS:-30}"
+      promotion_timeout="${KARGO_PROMOTION_TIMEOUT_SECONDS:-900}"
+      deadline=$(( $(date +%s) + promotion_timeout ))
+      promotion_commit=""
+
+      while (( $(date +%s) < deadline )); do
+        if ! git -C gitops fetch --quiet origin "${GITOPS_BRANCH}"; then
+          sleep "${poll_interval}"
+          continue
+        fi
+
+        while read -r commit; do
+          [[ -n "${commit}" ]] || continue
+
+          promoted_tag=$(git -C gitops show "${commit}:${GITOPS_PATH}/values.yaml" 2>/dev/null | yq e -r '.image.tag' 2>/dev/null || true)
+          if [[ "${promoted_tag}" == "${GENERATED_IMAGE_TAG}" ]]; then
+            promotion_commit="${commit}"
+            break
+          fi
+        done < <(git -C gitops log --format='%H' "origin/${GITOPS_BRANCH}" -- "${GITOPS_PATH}/values.yaml")
+
+        if [[ -n "${promotion_commit}" ]]; then
+          promotion_subject=$(git -C gitops show -s --format='%s' "${promotion_commit}")
+          promotion_message=$(git -C gitops show -s --format='%B' "${promotion_commit}")
+
+          {
+            echo "Kargo promotion status: Succeeded"
+            echo "Image tag: ${GENERATED_IMAGE_TAG}"
+            echo "Promotion commit: ${promotion_commit}"
+            echo "Commit message:"
+            printf '%s\n' "${promotion_message}"
+          } | tee kargo-promotion.txt
+
+          {
+            echo "KARGO_PROMOTION_STATUS=Succeeded"
+            echo "KARGO_PROMOTION_TAG=${GENERATED_IMAGE_TAG}"
+            echo "KARGO_PROMOTION_COMMIT=${promotion_commit}"
+            echo "KARGO_PROMOTION_SUBJECT=${promotion_subject}"
+          } > kargo-promotion.env
+
+          exit 0
+        fi
+
+        sleep "${poll_interval}"
+      done
+
+      echo "Kargo promotion was not found before timeout."
+      exit 1
+
+  artifacts:
+    reports:
+      dotenv: kargo-promotion.env
+    paths:
+      - kargo-promotion.txt
+    when: always
+    expire_in: 1 week
+
+gitops-dev:
+  <<: *gitops_template
+  tags:
+    - dev
+  variables:
+    GITOPS_REPO: "git@gitlab.internal.corp:devops/gitops.git"
+    GITOPS_BRANCH: "master"
+    GITOPS_PATH: project/dev/project/project-backend
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH =~ /^(feat|fix)\//
+  needs:
+    - job: publish-dev
+      artifacts: true
+
+gitops-uat:
+  <<: *gitops_template
+  tags:
+    - dev
+  variables:
+    GITOPS_REPO: "git@gitlab.internal.corp:devops/gitops.git"
+    GITOPS_BRANCH: "master"
+    GITOPS_PATH: project/uat/project/project-backend
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+  when: manual
+  needs:
+    - job: publish-uat
+      artifacts: true
+
+gitops-prod:
+  <<: *gitops_template
+  tags:
+    - prod
+  variables:
+    GITOPS_REPO: "git@gitlab.internal.corp:devops/gitops.git"
+    GITOPS_BRANCH: "master"
+    GITOPS_PATH: project/prod/project/project-backend
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+  when: manual
+  needs:
+    - job: publish-prod
+      artifacts: true
+
+# Manual runner workdir cleanup for storage maintenance.
+# The project directory itself is kept intact so the runner can reuse it.
+clear-workdir:
+  stage: cleanup
+  tags:
+    - dev
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - |
+      set -euo pipefail
+      echo "Clearing runner workdir: ${CI_PROJECT_DIR}"
+      if [ -d "${CI_PROJECT_DIR}" ]; then
+        find "${CI_PROJECT_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+      fi
+      echo "Runner workdir cleared."
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_TAG

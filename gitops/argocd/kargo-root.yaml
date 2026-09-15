@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: project-kargo
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/name: kargo-controller
+spec:
+  project: project
+  source:
+    repoURL: git@gitlab.internal.corp:devops/gitops.git
+    targetRevision: master
+    path: gitops/kargo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kargo-project
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

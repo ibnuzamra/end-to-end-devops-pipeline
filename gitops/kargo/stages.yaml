@@ -1,0 +1,38 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-project
+  namespace: kargo-project
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: project-warehouse
+      sources:
+        direct: true
+  promotionTemplate:
+    spec:
+      vars:
+        - name: image
+          value: 123456789012.dkr.ecr.ap-southeast-3.amazonaws.com/project-repository/project
+      steps:
+        - uses: git-clone
+          config:
+            repoURL: git@gitlab.internal.corp:devops/gitops.git
+            checkout:
+              - branch: master
+                path: ./repo
+        - uses: yaml-update
+          as: update-image
+          config:
+            path: ./repo/gitops/values/prod/values.yaml
+            updates:
+              - key: image.tag
+                value: ${{ imageFrom(vars.image).Tag }}
+        - uses: git-commit
+          config:
+            path: ./repo
+            message: "chore(gitops): update prod project image tag"
+        - uses: git-push
+          config:
+            path: ./repo

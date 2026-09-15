@@ -1,0 +1,26 @@
+version: 3
+projects:
+  - name: prod-gitlab
+    dir: env/prod-gitlab
+    workspace: default
+    autoplan:
+      enabled: true
+      when_modified: ["**/*.tf", "*.hcl"]
+  - name: dev
+    dir: env/dev
+    workspace: default
+    autoplan:
+      enabled: true
+      when_modified: ["**/*.tf", "*.hcl"]
+  - name: uat
+    dir: env/uat
+    workspace: default
+    autoplan:
+      enabled: true
+      when_modified: ["**/*.tf", "*.hcl"]
+  - name: prod
+    dir: env/prod
+    workspace: default
+    autoplan:
+      enabled: true
+      when_modified: ["**/*.tf", "*.hcl"]

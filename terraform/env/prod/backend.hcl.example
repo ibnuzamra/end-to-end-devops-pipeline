@@ -1,0 +1,6 @@
+bucket         = "REPLACE_ME"
+key            = "ec2/prod/terraform.tfstate"
+region         = "ap-southeast-3"
+dynamodb_table = "terraform-lock"
+encrypt        = true
+

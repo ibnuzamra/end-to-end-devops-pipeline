@@ -1,0 +1,16 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: kargo-project
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: kargo-project
+  namespace: kargo-project
+spec:
+  promotionPolicies:
+    - stage: prod-project
+      autoPromotionEnabled: true
