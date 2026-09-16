@@ -65,7 +65,7 @@ Terraform + Atlantis → AWS Infrastructure → GitLab CI/CD → Docker → AWS 
 - SonarQube (SAST & Code Quality)
 - Aqua Trivy (Vulnerabilities & Secret Scanning)
 - AWS Inspector2 (Container Image CVE Scanning)
-- pnpm / Node.js (Automated Unit Testing)
+- pnpm / Node.js & Golang (Automated Polyglot Unit Testing)
 
 ---
 
@@ -104,7 +104,7 @@ end-to-end-devops-pipeline/
 
 1. Developer pushes commit or creates Merge Request in GitLab.
 2. Source code checkout and dependency installation with frozen lockfile.
-3. Automated unit testing with Node.js and pnpm.
+3. Automated polyglot unit testing with Node.js (pnpm) and Golang.
 4. Static Application Security Testing (SAST) via SonarQube.
 5. Docker image build with isolated temporary scan tag (`scan-${CI_PIPELINE_ID}-${CI_JOB_ID}`).
 6. Cloud vulnerability analysis via AWS Inspector2 API on Amazon ECR digest.

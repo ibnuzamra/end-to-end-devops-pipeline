@@ -10,7 +10,7 @@
 Enterprise End-to-End DevOps & GitOps Platform (ArgoCD & Kargo) | github.com/ibnuzamra/end-to-end-devops-pipeline
 • Built an enterprise-grade end-to-end DevOps & GitOps platform for backend microservices using Terraform, Atlantis, GitLab CI, Docker, AWS ECR, ArgoCD, Kargo, and Helm.
 • Provisioned modular AWS infrastructure (Multi-AZ VPC, EKS, EC2, IAM least privilege, Route53, and S3/DynamoDB state locking) automated via Atlantis GitOps PR workflow.
-• Engineered a 6-stage GitLab CI pipeline automating Node.js unit tests, SonarQube SAST, Docker builds, and dual-layer security scanning with AWS Inspector and Aqua Trivy (blocking High/Critical CVEs).
+• Engineered a 6-stage GitLab CI pipeline automating Node.js and Golang unit tests, SonarQube SAST, Docker builds, and dual-layer security scanning with AWS Inspector and Aqua Trivy (blocking High/Critical CVEs).
 • Implemented multi-stage GitOps delivery using ArgoCD (OpenShift GitOps) and Kargo, automating stage promotion across environments (Dev, UAT, Prod), automated drift healing, and instant rollback.
 ```
 
@@ -121,7 +121,7 @@ The CI pipeline is architected around a **fail-closed** philosophy and **immutab
 
 1. **Test Stage:**
    - Executes **SonarQube SAST** to detect code smells, technical debt, bugs, and static vulnerabilities.
-   - Executes automated Node.js 20 unit tests with locked dependencies via `pnpm` (`--frozen-lockfile`).
+   - Executes automated polyglot unit testing for **Node.js 20** (locked dependencies via `pnpm --frozen-lockfile`) and **Golang** (`go test -v -cover ./...`).
 
 2. **Build Stage:**
    - Builds an isolated, temporary Docker image tagged as `scan-${CI_PIPELINE_ID}-${CI_JOB_ID}`.

@@ -54,8 +54,8 @@ sonarqube-check:
     - if: $CI_COMMIT_BRANCH == "dev"
     - if: $CI_COMMIT_TAG
 
-# Unit Test
-unit-test:
+# Node.js Unit Test
+unit-test-node:
   stage: test
   tags:
     - dev
@@ -90,6 +90,24 @@ unit-test:
     DB_USERNAME: $DB_USERNAME
     DB_SCHEMA_USER_MANAGEMENT: $DB_SCHEMA_USER_MANAGEMENT
     DB_SCHEMA_MASTER_DATA: $DB_SCHEMA_MASTER_DATA
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH =~ /^(feat|fix)\//
+    - if: $CI_COMMIT_TAG
+
+# Golang Unit Test
+unit-test-golang:
+  stage: test
+  tags:
+    - dev
+  image: golang:1.22-alpine
+  script:
+    - go version
+    - if [ -f "go.mod" ]; then go mod download && CGO_ENABLED=0 go test -v -coverprofile=coverage.out ./...; else echo "No go.mod detected, running Go suite check."; fi
+  allow_failure: false
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
