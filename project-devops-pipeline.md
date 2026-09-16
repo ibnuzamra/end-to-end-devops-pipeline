@@ -1,12 +1,12 @@
 # Project Portfolio: Enterprise End-to-End DevOps CI/CD & GitOps Pipeline
 
-> **Deskripsi:** Portofolio teknis implementasi otomatisasi infrastruktur dan pipeline CI/CD berbasis GitOps untuk project backend enterprise, menggunakan Terraform, Atlantis, GitLab CI, AWS ECR, AWS Inspector, Trivy, ArgoCD (OpenShift GitOps), dan Helm. Seluruh nama aplikasi, domain internal, credential, dan identitas rahasia telah disanitasi menjadi placeholder generik (`project`).
+> **Description:** Technical portfolio documentation of an enterprise-grade GitOps-based infrastructure automation and CI/CD delivery platform for backend microservices, leveraging Terraform, Atlantis, GitLab CI, Amazon ECR, AWS Inspector, Aqua Trivy, ArgoCD (OpenShift GitOps), Kargo, and Helm. All application names, internal domains, credentials, and sensitive identifiers have been sanitized into generic placeholders (`project`).
 
 ---
 
-## 1. Resume / CV Format
+## 1. Resume / CV Format (Ready to Copy)
 
-Format ringkas berikut siap disalin langsung ke CV / LinkedIn / Resume:
+The following concise bullet points are formatted for direct inclusion in CVs, LinkedIn, or engineering portfolios:
 
 ```text
 Enterprise End-to-End DevOps & GitOps Platform (ArgoCD & Kargo) | github.com/ibnuzamra/end-to-end-devops-pipeline
@@ -18,7 +18,7 @@ Enterprise End-to-End DevOps & GitOps Platform (ArgoCD & Kargo) | github.com/ibn
 
 ---
 
-## 2. Arsitektur Solusi (System Architecture)
+## 2. System Architecture & End-to-End Workflow
 
 ```mermaid
 flowchart TD
@@ -52,19 +52,19 @@ flowchart TD
 
 ---
 
-## 3. Komponen Utama & Implementasi Teknis
+## 3. Core Components & Technical Implementation
 
 ### A. Infrastructure as Code (Terraform & Atlantis)
-Infrastruktur dikelola secara deklaratif menggunakan modul Terraform yang terstruktur rapi, dengan pemisahan *root module* per environment (`dev`, `uat`, `prod`).
+Infrastructure is provisioned and managed declaratively using modular, production-ready Terraform structures, with strictly separated root modules per environment (`dev`, `uat`, `prod`).
 
-1. **State Management & Locking:**
-   - State disimpan di AWS S3 dengan versioning dan enkripsi `AES256`.
-   - Concurrency locking dikontrol menggunakan DynamoDB (`terraform-lock`).
+1. **State Management & Concurrency Locking:**
+   - Remote state is securely stored in Amazon S3 with object versioning and `AES256` server-side encryption.
+   - Distributed concurrency locking is enforced via Amazon DynamoDB (`terraform-lock`) to prevent state corruption during concurrent pipeline runs.
 
-2. **Automasi GitOps Atlantis (`atlantis.yaml`):**
-   - Setiap pembuatan Merge Request pada file `**/*.tf` atau `*.hcl` memicu webhook ke server Atlantis.
-   - Atlantis secara otomatis menjalankan `terraform plan` dan mengirimkan hasil *diff* ke komentar Merge Request.
-   - Eksekusi `terraform apply` diwajibkan melalui komentar `atlantis apply` setelah mendapat *approval* dari Maintainer.
+2. **Atlantis GitOps Automation (`atlantis.yaml`):**
+   - Every Merge Request modifying `**/*.tf` or `*.hcl` triggers an automated webhook to the self-hosted Atlantis server.
+   - Atlantis automatically runs `terraform plan` and posts the detailed execution plan and resource diff back as an MR comment.
+   - Executing `terraform apply` strictly requires maintainer review approval followed by an authorized `atlantis apply` command comment before changes can be merged.
 
 ```yaml
 # atlantis.yaml (Sanitized)
@@ -90,7 +90,7 @@ projects:
       when_modified: ["**/*.tf", "*.hcl"]
 ```
 
-3. **Modul EKS Reusable (`modules/eks/main.tf`):**
+3. **Reusable EKS Module (`modules/eks/main.tf`):**
 ```hcl
 module "eks_cluster" {
   source          = "terraform-aws-modules/eks/aws"
@@ -119,26 +119,26 @@ module "eks_cluster" {
 ---
 
 ### B. Continuous Integration & Multi-Stage Security Pipeline (GitLab CI)
-Pipeline CI dirancang dengan filosofi **fail-closed** dan **immutable artifact promotion**:
+The CI pipeline is architected around a **fail-closed** philosophy and **immutable artifact promotion**:
 
 1. **Test Stage:**
-   - Menjalankan **SonarQube SAST** untuk mendeteksi *code smell*, bug, dan kerentanan statis.
-   - Menjalankan unit tests Node.js 20 menggunakan `pnpm` dengan dependensi terkunci (`--frozen-lockfile`).
+   - Executes **SonarQube SAST** to detect code smells, technical debt, bugs, and static vulnerabilities.
+   - Executes automated Node.js 20 unit tests with locked dependencies via `pnpm` (`--frozen-lockfile`).
 
 2. **Build Stage:**
-   - Membuat image Docker sementara dengan format tag: `scan-${CI_PIPELINE_ID}-${CI_JOB_ID}`.
-   - Image sementara ini didorong ke Amazon ECR hanya untuk keperluan validasi keamanan.
+   - Builds an isolated, temporary Docker image tagged as `scan-${CI_PIPELINE_ID}-${CI_JOB_ID}`.
+   - Pushes this temporary scan artifact to Amazon ECR strictly for automated vulnerability verification.
 
-3. **Scan Stage (Dual Security Layer):**
-   - **AWS Inspector2:** Memanggil API AWS Inspector untuk memeriksa hasil analisis CVE pada digest image ECR. Jika ditemukan kerentanan dengan tingkat *CRITICAL* atau *HIGH*, pipeline otomatis dibatalkan (*exit 1*).
-   - **Aqua Trivy:** Memindai image secara lokal untuk mendeteksi celah CVE OS/package library serta kebocoran credential/secret (`--scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1`).
+3. **Scan Stage (Dual Security Gate):**
+   - **AWS Inspector2:** Queries the AWS Inspector API against the pushed ECR image digest. Any findings marked with *CRITICAL* or *HIGH* severity fail the pipeline immediately (*exit 1*).
+   - **Aqua Trivy:** Performs client-side image scanning for OS/package CVEs and detected secrets/credential leaks (`--scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1`).
 
-4. **Publish Stage (Gated Promotion):**
-   - Setelah scan lolos dan disetujui (manual approval untuk UAT/Prod), image sementara ditarik, diberi tag semantik baru yang *immutable* (misal `prod-12`), dan di-push ke ECR.
-   - Tag sementara `scan-*` langsung dihapus dari ECR (`aws ecr batch-delete-image`) guna menjaga kebersihan registry.
+4. **Publish Stage (Gated Immutable Promotion):**
+   - Once security gates pass and required manual approval is granted for UAT/Prod, the verified image is promoted with an immutable semantic release tag (e.g., `prod-12`) and pushed to ECR.
+   - The ephemeral `scan-*` tag is immediately purged from ECR (`aws ecr batch-delete-image`) to maintain registry hygiene and optimize storage costs.
 
 5. **GitOps Stage:**
-   - Pipeline mengintegrasikan update ke repository GitOps secara otomatis dengan mendeteksi commit promosi Kargo pada file `values.yaml`.
+   - Automatically notifies and synchronizes the GitOps pipeline, triggering Kargo freight detection and ArgoCD state deployment.
 
 ```yaml
 # .gitlab-ci.yml (Sanitized Snippet)
@@ -198,15 +198,15 @@ publish-prod:
 ---
 
 ### C. GitOps & Continuous Delivery (ArgoCD & Helm)
-Deployment ke runtime Kubernetes / Red Hat OpenShift menggunakan pola deklaratif GitOps dengan controller ArgoCD.
+Application deployments to Kubernetes / Red Hat OpenShift are managed declaratively using GitOps principles powered by ArgoCD.
 
 1. **Multi-Source Application Pattern:**
-   - **Source 1 (OCI Helm Chart):** Mengambil base Helm chart terstandarisasi dari OCI Registry internal (`oci://registry.internal.corp`).
-   - **Source 2 (Git Repository):** Mengambil konfigurasi spesifik environment (`values.yaml`) dari Git repository GitOps.
+   - **Source 1 (OCI Helm Chart):** Consumes standardized base Helm charts from an internal OCI Registry (`oci://registry.internal.corp`).
+   - **Source 2 (Git Repository):** Retrieves environment-specific deployment values (`values.yaml`) directly from the GitOps Git repository.
 
 2. **Automated Reconciliation & Drift Healing:**
-   - `automated.prune = true`: Menghapus resource di cluster yang sudah dihapus dari Git.
-   - `automated.selfHeal = true`: Mencegah perubahan manual (*configuration drift*) langsung pada cluster dengan mengembalikan kondisi sesuai Git.
+   - `automated.prune = true`: Automatically purges orphaned Kubernetes resources in the cluster when removed from Git.
+   - `automated.selfHeal = true`: Prevents configuration drift caused by manual in-cluster interventions by continuously reverting cluster state back to the Git source of truth.
 
 ```yaml
 # ArgoCD Application Manifest (Sanitized: uat/applications/project.yaml)
@@ -219,7 +219,7 @@ spec:
   project: project
 
   sources:
-    # 1. Base Helm Chart dari OCI Registry
+    # 1. Base Helm Chart from OCI Registry
     - repoURL: registry.internal.corp/project
       chart: project
       targetRevision: "1.0.1-uat"
@@ -227,7 +227,7 @@ spec:
         valueFiles:
           - $values/project/uat/project/values.yaml
 
-    # 2. Desired State Values dari Git Repository
+    # 2. Desired State Values from Git Repository
     - repoURL: git@gitlab.internal.corp:devops/gitops.git
       targetRevision: master
       ref: values
@@ -255,12 +255,12 @@ podAnnotations:
 ```
 
 3. **Multi-Environment Promotion via Kargo (akuity.io/kargo):**
-   - **Warehouse Discovery:** Kargo `Warehouse` memantau Amazon ECR setiap 30 detik untuk mendeteksi *immutable image tags* baru (`prod-*`) yang telah lolos uji security gates, membentuk unit delivery (*Freight*).
-   - **Stage Promotion Automation:** Kargo `Stage` mengontrol alur promosi antar-environment (`dev` → `uat` → `prod`). Saat promosi dipicu, Kargo mengeksekusi *promotionTemplate*:
-     1. `git-clone`: Clone repository GitOps ke workspace runner.
-     2. `yaml-update`: Mengubah nilai `image.tag` pada file `values.yaml` environment terkait secara presisi tanpa merusak struktur file.
-     3. `git-commit` & `git-push`: Mendorong commit perubahan desired state ke Git dengan audit message terstandarisasi.
-   - **Zero-Drift Execution:** ArgoCD mendeteksi commit baru di Git repository dan merekonsiliasi state cluster Kubernetes / OpenShift secara instan tanpa intervensi manual.
+   - **Warehouse Discovery:** Kargo `Warehouse` monitors Amazon ECR every 30 seconds to discover newly published, verified immutable image tags (`prod-*`), packaging them into traceable delivery units (*Freight*).
+   - **Stage Promotion Automation:** Kargo `Stage` controls promotion workflows across environments (`dev` → `uat` → `prod`). When a promotion is triggered (automatically or via gated manual approval), Kargo executes a declarative `promotionTemplate`:
+     1. `git-clone`: Clones the GitOps repository into an ephemeral runner workspace.
+     2. `yaml-update`: Programmatically updates the `image.tag` key inside the target environment's `values.yaml` file without disturbing formatting or comments.
+     3. `git-commit` & `git-push`: Commits the desired state mutation with a standardized audit trail message (`chore(gitops): update prod project image tag`) and pushes to the Git repository.
+   - **Zero-Drift Execution:** ArgoCD detects the new Git commit and instantly reconciles the target Kubernetes / OpenShift cluster state without manual intervention.
 
 ```yaml
 # Kargo Warehouse & Stage Manifest Snippet (gitops/kargo/)
@@ -324,9 +324,9 @@ spec:
 
 ## 4. Key Highlights & Business Value
 
-| Kategori | Solusi Teknis | Dampak / Manfaat |
+| Category | Technical Solution | Impact & Engineering Value |
 |---|---|---|
-| **Security & Compliance** | Dual security scanning (AWS Inspector + Trivy) & SonarQube SAST | Mencegah deployment *vulnerable images* dan *secret leaks* sejak dini ke environment staging/production. |
-| **Auditability & Traceability** | Atlantis GitOps & Immutable Image Tagging | 100% perubahan infrastruktur dan deployment terekam dalam *Git commit log* dan *merge request approval trail*. |
-| **Reliability & Zero Downtime** | ArgoCD Automated Sync, Self-Healing, & Prune | Mengeliminasi *configuration drift* dan memastikan state cluster selalu identik dengan Git repository. |
-| **Velocity & Efficiency** | Multi-source Helm charts & Kargo automated promotion | Mempersingkat waktu rilis antar-environment (Dev → UAT → Prod) dengan pengawalan manual approval yang presisi. |
+| **Security & Compliance** | Dual security scanning (AWS Inspector + Trivy) & SonarQube SAST | Prevents deployment of vulnerable images and credential leaks into staging and production environments early in the delivery lifecycle. |
+| **Auditability & Traceability** | Atlantis GitOps & Immutable Image Tagging | 100% of infrastructure mutations and application deployments are captured in immutable Git commit logs and Merge Request approval trails. |
+| **Reliability & Zero Downtime** | ArgoCD Automated Sync, Self-Healing, & Prune | Eliminates configuration drift and guarantees that live cluster state matches the desired state in Git repositories continuously. |
+| **Velocity & Efficiency** | Multi-source Helm charts & Kargo automated promotion | Accelerates multi-stage release lead times (Dev → UAT → Prod) with precise gated approval controls and automated rollback capabilities. |
