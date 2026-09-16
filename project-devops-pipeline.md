@@ -4,9 +4,7 @@
 
 ---
 
-## 1. Resume / CV Format (Ready to Copy)
-
-The following concise bullet points are formatted for direct inclusion in CVs, LinkedIn, or engineering portfolios:
+## 1. Summary
 
 ```text
 Enterprise End-to-End DevOps & GitOps Platform (ArgoCD & Kargo) | github.com/ibnuzamra/end-to-end-devops-pipeline
