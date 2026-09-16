@@ -17,6 +17,8 @@ Enterprise-grade end-to-end DevOps delivery pipeline and cloud infrastructure au
 
 This project is an enterprise-grade end-to-end DevOps project that demonstrates Infrastructure as Code (IaC), CI/CD automation, container security scanning, Kubernetes/OpenShift orchestration, and GitOps delivery on AWS.
 
+> 📖 **In-Depth Technical Documentation:** For deep-dive architectural breakdown, Kargo multi-environment promotion manifests, and resume bullets, see [project-devops-pipeline.md](./project-devops-pipeline.md).
+
 The project provisions AWS infrastructure using Terraform and Atlantis, builds, tests, and security-scans application changes through GitLab CI, stores container images in Amazon ECR, deploys microservices to Kubernetes / Red Hat OpenShift, and manages continuous deployment using ArgoCD and Kargo.
 
 ---

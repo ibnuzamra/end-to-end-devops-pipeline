@@ -36,14 +36,15 @@ pnpm-debug.log*
 trivy-cache/
 .trivy/
 
-# OS files
+# OS and backup files
 .DS_Store
 Thumbs.db
+*.backup.md
+*.bak
 
 # Allow markdown documentation
-
-# Khusus README.md diperbolehkan push ke git (override global ~/.config/git/ignore)
 !README.md
 !readme.md
 !**/README.md
 !**/readme.md
+!project-devops-pipeline.md
