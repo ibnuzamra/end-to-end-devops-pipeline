@@ -1,6 +1,6 @@
 # Project Portfolio: Enterprise End-to-End DevOps CI/CD & GitOps Pipeline
 
-> **Description:** Technical portfolio documentation of an enterprise-grade GitOps-based infrastructure automation and CI/CD delivery platform for backend microservices, leveraging Terraform, Atlantis, GitLab CI, Amazon ECR, AWS Inspector, Aqua Trivy, ArgoCD (OpenShift GitOps), Kargo, and Helm. All application names, internal domains, credentials, and sensitive identifiers have been sanitized into generic placeholders (`project`).
+> **Description:** Technical portfolio documentation of an enterprise-grade GitOps-based infrastructure automation and CI/CD delivery platform for backend microservices, leveraging Terraform, Atlantis, GitLab CI, Amazon ECR, AWS Inspector, Aqua Trivy, ArgoCD, Kargo, and Helm. All application names, internal domains, credentials, and sensitive identifiers have been sanitized into generic placeholders (`project`).
 
 ---
 
@@ -11,7 +11,7 @@ Enterprise End-to-End DevOps & GitOps Platform (ArgoCD & Kargo) | github.com/ibn
 • Built an enterprise-grade end-to-end DevOps & GitOps platform for backend microservices using Terraform, Atlantis, GitLab CI, Docker, AWS ECR, ArgoCD, Kargo, and Helm.
 • Provisioned modular AWS infrastructure (Multi-AZ VPC, EKS, EC2, IAM least privilege, Route53, and S3/DynamoDB state locking) automated via Atlantis GitOps PR workflow.
 • Engineered a 6-stage GitLab CI pipeline automating Node.js and Golang unit tests, SonarQube SAST, Docker builds, and dual-layer security scanning with AWS Inspector and Aqua Trivy (blocking High/Critical CVEs).
-• Implemented multi-stage GitOps delivery using ArgoCD (OpenShift GitOps) and Kargo, automating stage promotion across environments (Dev, UAT, Prod), automated drift healing, and instant rollback.
+• Implemented multi-stage GitOps delivery using ArgoCD and Kargo, automating stage promotion across environments (Dev, UAT, Prod), automated drift healing, and instant rollback.
 ```
 
 ---
@@ -38,10 +38,10 @@ flowchart TD
         GateApproval -->|Approved| StagePublish[Stage 4: Publish\n- Immutable Semantic Tag\n- Push to AWS ECR\n- Purge Temp Scan Tag]
     end
 
-    subgraph CD["Continuous Delivery & GitOps (ArgoCD / OpenShift GitOps)"]
+    subgraph CD["Continuous Delivery & GitOps (ArgoCD & Kargo)"]
         StagePublish -->|Stage 5: GitOps Trigger| Kargo[Kargo Stage Promotion]
         Kargo -->|Commit Tag to values.yaml| GitOpsRepo[GitOps Repository\nDev / UAT / Prod]
-        GitOpsRepo -->|Watch Desired State| ArgoCD[ArgoCD / OpenShift GitOps]
+        GitOpsRepo -->|Watch Desired State| ArgoCD[ArgoCD]
         OCIChart[(Internal OCI Helm Registry)] -->|Helm Chart Template| ArgoCD
         ArgoCD -->|Multi-Source Sync & Drift Heal| K8sCluster[Kubernetes / Red Hat OpenShift]
         AWSCloud -.->|Host| K8sCluster

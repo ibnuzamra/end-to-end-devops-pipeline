@@ -4,10 +4,10 @@
 [![GitOps: Atlantis](https://img.shields.io/badge/GitOps-Atlantis_v0.46-2D72D9?logo=terraform&logoColor=white)](https://www.runatlantis.io/)
 [![CI/CD: GitLab CI](https://img.shields.io/badge/CI%2FCD-GitLab_CI-FC6D26?logo=gitlab&logoColor=white)](https://about.gitlab.com/)
 [![Security: Trivy & Inspector](https://img.shields.io/badge/Security-Trivy_%7C_AWS_Inspector-FF9900?logo=amazon-aws&logoColor=white)](https://aws.amazon.com/inspector/)
-[![GitOps: ArgoCD](https://img.shields.io/badge/Delivery-ArgoCD_%7C_OpenShift_GitOps-EF7B42?logo=argo&logoColor=white)](https://argo-cd.readthedocs.io/)
+[![GitOps: ArgoCD](https://img.shields.io/badge/Delivery-ArgoCD-EF7B42?logo=argo&logoColor=white)](https://argo-cd.readthedocs.io/)
 [![Packaging: Helm](https://img.shields.io/badge/Packaging-Helm_3-0F1689?logo=helm&logoColor=white)](https://helm.sh/)
 
-Enterprise-grade end-to-end DevOps delivery pipeline and cloud infrastructure automation for microservices, featuring **Atlantis-driven Terraform IaC**, **GitLab CI with dual-layer container vulnerability scanning**, and **ArgoCD (OpenShift GitOps) with Kargo multi-environment continuous deployment**.
+Enterprise-grade end-to-end DevOps delivery pipeline and cloud infrastructure automation for microservices, featuring **Atlantis-driven Terraform IaC**, **GitLab CI with dual-layer container vulnerability scanning**, and **ArgoCD and Kargo multi-environment continuous deployment**.
 
 > **Note:** All application identifiers, private registries, internal domains, and AWS account credentials in this repository have been sanitized into standard placeholders (`project`, `project-repository`, `registry.internal.corp`) for public portfolio representation.
 
@@ -58,7 +58,7 @@ Terraform + Atlantis → AWS Infrastructure → GitLab CI/CD → Docker → AWS 
 - Multi-Source Helm Applications
 
 ### GitOps & Delivery
-- ArgoCD (OpenShift GitOps)
+- ArgoCD
 - Kargo (Automated Multi-Stage Promotion)
 
 ### Security & Quality Checks
